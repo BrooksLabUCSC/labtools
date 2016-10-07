@@ -5,9 +5,9 @@
 # make sure we can find the python script. Assume it's in the same directory.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PATH=$DIR:$PATH
-if [[ ! $(which nanoporeMatchTable.py) ]]; then
+if [[ ! $(which nanoporeMatchTable.py) ]] || [[ ! $(which blat) ]] || [[ ! $(which faCount) ]] ; then
     echo
-    echo "ERROR! Please add the program nanoporeMatchTable.py to your PATH or to this script"
+    echo "ERROR! Please add the programs faCount, blat, and nanoporeMatchTable.py to your PATH or to this script"
     echo
     exit
 fi
