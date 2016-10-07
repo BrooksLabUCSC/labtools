@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser(
 This program creates a table with adapter positions in nanopore reads, based on a psl format input file.
 Optionally a second alignment file of reads vs transcripts can be added in psl or sam format, the program
 then adds start and end positions of the transcript alignment in the read.
-If a sam format is used, you MUST give in a file with transcript sizes in the format
+If the sam format is used, you MUST give in a file with transcript sizes in the format
 
 TranscriptID\tsize
 
