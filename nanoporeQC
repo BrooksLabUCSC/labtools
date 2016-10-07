@@ -4,7 +4,6 @@
 
 # make sure we can find the python script. Assume it's in the same directory.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-echo $DIR
 PATH=$DIR:$PATH
 if [[ ! $(which nanoporeMatchTable.py) ]]; then
     echo
