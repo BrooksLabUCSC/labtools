@@ -1,0 +1,101 @@
+#! /bin/bash
+
+# wrapper for nanoporeMatchTable.py
+
+# make sure we can find the python script. Assume it's in the same directory.
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+echo $DIR
+PATH=$DIR:$PATH
+if [[ ! $(which nanoporeMatchTable.py) ]]; then
+    echo
+    echo "ERROR! Please add the program nanoporeMatchTable.py to your PATH or to this script"
+    echo
+    exit
+fi
+
+readfasta=$1
+adapters=$2
+alignments=$3
+txfasta=$4
+if [ ! -e "$adapters" ]; then
+    echo
+    echo "This program aligns adapters to nanopore reads and outputs a table with match positions"
+    echo
+    echo "Inputs are a reads file (fasta or fastq), and an adapter file (fasta with two sequences)"
+    echo 
+    echo "When ALSO given a reads-vs-transcripts alignment file (in sam or psl format), "
+    echo "it adds the transcript matches to the output table"
+    echo 
+    echo "IF you add a sam format input, you MUST ALSO add a fasta file with the transcripts"
+    echo "that were used in the alignments"
+    echo
+    echo "The inputs must be in order, like so:"
+    echo
+    echo "$0 reads.fa adapters.fa > output.tsv"
+    echo "$0 reads.fq adapters.fa alignments.psl > output.tsv"
+    echo "$0 reads.fa adapters.fa alignments.sam transcripts.fa > output.tsv"
+    echo
+    exit
+fi
+
+graceful_death() {
+	>&2 echo "ERROR: Cannot finish $0 because $1";
+	exit 1
+}
+
+if [ ! -e "$readfasta" ]; then
+	graceful_death "cannot find nanopore fasta file $readfasta"
+fi 
+if [ ! -e "$adapters" ]; then
+	graceful_death "cannot find adapter fasta file $adapters"
+fi 
+if [ ! -z "$alignments" ]; then
+    if [ ! -e "$alignments" ]; then
+	graceful_death "cannot find alignment file $alignments"
+    fi 
+    if [[ "$alignments" == *sam ]]; then
+        atype='sam'
+    elif [[ "$alignments" == *psl ]]; then
+        atype=''
+    else
+        graceful_death "don't understand file type of $alignments"
+    fi
+    if [ "$atype" == 'sam' ] && [ ! -e "$txfasta" ]; then
+	graceful_death "cannot find transcript fasta file $txfasta"
+    fi 
+fi
+
+# Format input
+workdir=/tmp/npQC.$RANDOM
+mkdir $workdir
+base=$(echo $readfasta | sed 's/.*\///' | sed 's/\.*//')
+
+# convert read file if necessary
+if [[ "$readfasta" == *fastq ]] || [[ "$readfastq" == *fq ]]; then
+    awk 'NR%4==1 || NR%4==2' $readfasta | sed 's/@/>/' > $workdir/input.fa
+    readfasta="$workdir/input.fa"
+fi
+
+# Get read sizes
+faCount $readfasta > $workdir/$base.rSizes
+
+# align adapters to SRSF1
+blat -noHead -minIdentity=0 -minMatch=0 -minScore=0 $readfasta $adapters $workdir/$base.psl
+
+# create match table
+# if we have transcript input
+if [ ! -z "$alignments" ]; then
+    if [ "$atype" == 'sam'  ]; then 
+        faCount $txfasta > $workdir/$base.txSizes
+        # output to STDOUT
+        nanoporeMatchTable.py --adaptalign $workdir/$base.psl --readsizes $workdir/$base.rSizes --txalign $alignments --txsizes $workdir/$base.txSizes 
+    else
+        nanoporeMatchTable.py --adaptalign $workdir/$base.psl --readsizes $workdir/$base.rSizes --txalign $alignments 
+    fi
+else
+    nanoporeMatchTable.py --adaptalign $workdir/$base.psl --readsizes $workdir/$base.rSizes 
+fi
+
+rm $workdir/*
+rmdir $workdir
+

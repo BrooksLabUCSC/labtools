@@ -5,24 +5,28 @@ import sys, os, re, getopt, argparse, textwrap
 parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
     description=textwrap.dedent('''\
-For nanopore reads, create a table that contains the locations of adapters and transcript matches.
 
-Inputs are - a file of blast hits of adapters (query) vs reads (database)
-           - a file of read hits vs transcripts in sam (add -s) or psl format
-           - faCount output for the reads
-           - faCount output for the transcripts
+This program creates a table with adapter positions in nanopore reads, based on a psl format input file.
+Optionally a second alignment file of reads vs transcripts can be added in psl or sam format, the program
+then adds start and end positions of the transcript alignment in the read.
+If a sam format is used, you MUST give in a file with transcript sizes in the format
+
+TranscriptID\tsize
+
+The program faCount outputs this format.
+
         '''))
-parser.add_argument('apsl', type=str,  help="adapter psl format file")
-parser.add_argument('tpsl', type=str,  help="transcript psl format file")
-parser.add_argument('rsizes', type=str,  help="faCount output for nanopore reads")
-parser.add_argument('tsizes', type=str,  help="faCount output for transcripts")
+group = parser.add_argument_group('required arguments')
+group.add_argument('--adaptalign', type=str, required=True, help="psl format alignment of ADAPTERS vs READS")
+group.add_argument('--readsizes', type=str, required=True, help="faCount output for nanopore reads")
 # optional flag
-parser.add_argument('-s', '--sam', help="transcript input is in sam format", action='store_true')
+parser.add_argument('--txalign', type=str,  help="psl or sam format file of READS vs TRANSCRIPTS")
+parser.add_argument('--txsizes', type=str,  help="faCount output for transcripts, required if using sam format")
 
 
 class readCoords(object):
     """
-    keeps track of read match positions
+    keeps track of read match positions for the final output table
     """
     def __init__(self, rName, size):
         self.name = rName
@@ -56,7 +60,7 @@ class readCoords(object):
         self.raStart = raStart
         self.raID = raID
         self.raScore = raScore
-    def addTx(self, lefttName, start, end, strand):
+    def addTx(self, tName, start, end, strand):
         """Add transcript, replace if a longer hit is found"""
         skip = False
         if self.tID != 'NA':
@@ -76,11 +80,16 @@ class readCoords(object):
             except KeyError:
                 print >>sys.stderr, "cannot find size for", self.tID
                 sys.exit()
-    def printRead(self):
+    def printRead(self, withTx):
         """Print table to stdout """
-	print "{name}\t{las}\t{ts}\t{te}\t{ras}\t{ss}\t{lid}\t{rid}\t{tid}\t{tsi}\t{str}".format(name=self.name, 
-            las=self.laStart, ts=self.tStart, te=self.tEnd, ras=self.raStart, ss=self.size, 
-            lid=self.laID, rid=self.raID, tid=self.tID, tsi=self.tSize, str=self.tStrand)
+        if withTx:
+	    print "{name}\t{las}\t{ts}\t{te}\t{ras}\t{ss}\t{lid}\t{rid}\t{tid}\t{tsi}\t{str}".format(name=self.name, 
+                las=self.laStart, ts=self.tStart, te=self.tEnd, ras=self.raStart, ss=self.size, 
+                lid=self.laID, rid=self.raID, tid=self.tID, tsi=self.tSize, str=self.tStrand)
+        else:
+	    print "{name}\t{las}\t{ras}\t{ss}\t{lid}\t{rid}".format(name=self.name, 
+            las=self.laStart, ras=self.raStart, ss=self.size, 
+            lid=self.laID, rid=self.raID)
        
 class SamHit(object):
     """
@@ -127,6 +136,8 @@ class BlatHit(object):
         self.qSize, self.qStart, self.qEnd = map(int, fields[10:13])
         self.tName = fields[13] 
         # gencode ID
+        if '|' in self.tName:
+            self.tName = ('|').join(self.tName.split('|')[:2])
         #self.gName = self.tName.split('|')[1]
         self.tSize, self.tStart, self.tEnd = map(int, fields[14:17])
         self.blockCount = int(fields[17])
@@ -171,20 +182,17 @@ def sizeDict(infile):
     return sdict
 
 
-if len(sys.argv) != 4:
-    parser.print_help()
-    sys.exit(1)
-
 args = parser.parse_args()
 # Run program
 
+if (args.txalign and not args.txsizes) or (args.txsizes and not args.txalign):
+    print >>sys.stderr, 'ERROR, if you want to add transcript info you must give both the --txalign AND --txsizes input'
+
 # Create read objects
-readDict = sizeDict(args.rsizes)
-# Keep track of transcript sizes
-txSizes = txSizeDict(args.tsizes)
+readDict = sizeDict(args.readsizes)
 
 # Add adapter info to read objects 
-with open(args.apsl, 'r') as f:
+with open(args.adaptalign, 'r') as f:
     # in the adapter blat file, the read is the target
     headFlag = False
     for line in f:
@@ -206,39 +214,49 @@ with open(args.apsl, 'r') as f:
             readObj.addRA(hit.qName, hit.tStart, hit.pslScore)
         # if the adapter crosses the middle of the read, there's something wrong
         else:
-             print >>sys.stderr, "having trouble understanding hit {} for read {}, size {}".format(hit.qName, hit.tName, hit.tSize)
+             print >>sys.stderr, "IGNORING: adapter {} for read {}, size {} maps to middle of read".format(hit.qName, hit.tName, hit.tSize)
 
-# transcript hits can be sam or psl format
-if(args.sam == True):
-    with open(args.tpsl, 'r') as f:
-        for line in f:
-            if line.startswith('@SQ') or line.startswith('@PG') or line.startswith('@HD'):
-                continue
-            hit = SamHit(line.strip())
-            readObj = readDict[hit.qName] 
-            readObj.addTx(hit.tName, hit.qStart, hit.qEnd, hit.strand)
-
-# psl format
-else:
-    # in the transcript file, one hit per read is expected and the read is the query
-    with open(args.tpsl, 'r') as f:
-        headFlag = False
-        for line in f:
-            # deal with header
-            if line.startswith('psLayout'):
-                headFlag = True
-            elif line.startswith('------'):
-                headFlag = False
-                continue
-            if headFlag:
-                continue
-            hit = BlatHit(line.strip())
-            readObj = readDict[hit.tName] 
-            readObj.addTx(hit.tName, hit.qStart, hit.qEnd, hit.strand)
+if args.txalign:
+    # Keep track of transcript sizes. If the input is in sam format, a fasta file with transcripts is required.
+    txSizes = dict()
+    # transcript hits can be sam or psl format
+    if(args.txsizes):
+        print >> sys.stderr, "assuming {} is in SAM format...".format(args.txalign)
+        txSizes = txSizeDict(args.txsizes)
+        with open(args.txalign, 'r') as f:
+            for line in f:
+                if line.startswith('@SQ') or line.startswith('@PG') or line.startswith('@HD'):
+                    continue
+                hit = SamHit(line.strip())
+                readObj = readDict[hit.qName] 
+                readObj.addTx(hit.tName, hit.qStart, hit.qEnd, hit.strand)
+    
+    # psl format
+    else:
+        # in the transcript file, one hit per read is expected and the read is the query
+        print >> sys.stderr, "assuming {} is in PSL format...".format(args.txalign)
+        with open(args.txalign, 'r') as f:
+            headFlag = False
+            for line in f:
+                # deal with header
+                if line.startswith('psLayout'):
+                    headFlag = True
+                elif line.startswith('------'):
+                    headFlag = False
+                    continue
+                if headFlag:
+                    continue
+                hit = BlatHit(line.strip())
+                txSizes[hit.tName] = hit.tSize 
+                readObj = readDict[hit.qName] 
+                readObj.addTx(hit.tName, hit.qStart, hit.qEnd, hit.strand)
 
 
 # Print results
-print "ReadID\tLeftAdaptEnd\tTxMatchStart\tTxMatchEnd\tRightAdaptStart\tReadSize\tleftAdapt\trightAdapt\tTranscript\tTxSize\tstrand"
+if args.txsizes:
+    print "ReadID\tLeftAdaptEnd\tTxMatchStart\tTxMatchEnd\tRightAdaptStart\tReadSize\tleftAdapt\trightAdapt\tTranscript\tTxSize\tstrand"
+else:
+    print "ReadID\tLeftAdaptEnd\tRightAdaptStart\tReadSize\tleftAdapt\trightAdapt"
 for r in readDict.values():
-    r.printRead()
+    r.printRead(args.txsizes)
 
