@@ -80,7 +80,7 @@ fi
 faCount $readfasta > $workdir/$base.rSizes
 
 # align adapters to SRSF1
-blat -noHead -minIdentity=0 -minMatch=0 -minScore=0 $readfasta $adapters $workdir/$base.psl
+blat -noHead -minIdentity=0 -minMatch=0 -minScore=0 $readfasta $adapters $workdir/$base.psl >/dev/null
 
 # create match table
 # if we have transcript input
