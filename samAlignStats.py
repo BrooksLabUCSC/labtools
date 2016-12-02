@@ -21,9 +21,7 @@ parser.add_argument('sam', type=str,  help="sam format file")
 # optional regular argument
 parser.add_argument('-b', '--outputbase', help="Output basename")
 
-#TODO: Allow bam input; Sort input on read ID (samtools does this); take one alignment only
 #TODO: Clarify % of alignment to % of aligned read
-#TODO: Allow hard clip input (cannot calculate GC% if used) 
        
 class SamHit(object):
     """
@@ -31,41 +29,71 @@ class SamHit(object):
     """
     def __init__(self, inline):
         fields = inline.split('\t')
-        cigar = fields[5]
-### RETHINK THIS - doesn't work with all sam inputs #####
+        self.qname = fields[0]
+        self.cigar = fields[5]
         # make sure all nucleotides are uppercase
-        seq = fields[9].upper()
-        self.size = len(seq)
-        if self.size == 0:
-            self.unaligned = True
+        self.seq = fields[9].upper()
+        self.charList = parseCigar(self.cigar)
+
+    def stats(self):
+        """Add information on the alignment"""
+
+        # sanity check
+        # at this point we should not have any hard clipped sequences
+        self.size = len(self.seq)
+        if self.size < 2:
+            print >>sys.stderr, ("ERROR, read {} has no sequence, cannot calculate stats".format(self.qname))
+            sys.exit(1)
+        if self.cigar == '*':
+            self.rawAlign = 0
             return
-        self.nfract, self.gc =  ngcount(seq)
-    
-###########################
-        if cigar == '*':
-            self.unaligned = True
-            return
-        self.unaligned = False
-        charList = parseCigar(cigar)
-        # sanity check - this fails on the hard clipped reads. We should not have hard clips.
-        if self.size != charList['M'] + charList['I'] + charList['S'] + charList['H']:
-            print >>sys.stderr,  fields[0], "no match", self.size,  charList['M'], charList['I'], charList['S'], charList['H']
+
+        if self.size != self.charList['M'] + self.charList['I'] + self.charList['S']:
+            print >>sys.stderr,  self.qname, "ERROR: no match", self.size,  self.charList['M'], self.charList['I'], self.charList['S']
+            sys.exit(1)
+
+        self.nfract, self.gc =  ngcount(self.seq)
 
         # The raw alignment length is M+I
-        self.rawAlign = charList['M'] + charList['I']
+        self.rawAlign = self.charList['M'] + self.charList['I']
 
         # percent identity is matches divided by rawAlign
-        self.pID = int(100*(float(charList['M']) / float(self.rawAlign)))
+        self.pID = int(100*(float(self.charList['M']) / float(self.rawAlign)))
 
         # alignment percentage is rawAlign divided by self.size
         self.pAlign = int(100*(float(self.rawAlign)/float(self.size)))
 
         # indels are counted a bit differently, we use the length of the read minus introns and overhang
-        alignSize = self.size - (charList['S'] + charList['N'] + charList['H'])
+        alignSize = self.size - (self.charList['S'] + self.charList['N'] )
         
-        self.ins = cigarFract(charList, 'I', alignSize)
-        self.delet = cigarFract(charList, 'D', alignSize)
+        self.ins = cigarFract(self.charList, 'I', alignSize)
+        self.delet = cigarFract(self.charList, 'D', alignSize)
         self.indel = self.ins + self.delet 
+
+def getBest(sams):
+    """Return single hit with best match, replace sequence with full length if necessary"""
+
+    if len(sams) == 1:
+        return sams[0]
+    # we're assuming no empty cigar strings if there are multiple alignments
+    fullseq = False
+    bestscore = 0
+    for s in sams:
+        if s.charList['H'] == 0:
+            fullseq = s.seq
+        else:  
+            # put hard clip count into soft clip placeholder
+            s.charList['S'] = s.charList['H']
+        score = s.charList['M'] + s.charList['I']
+        if score > bestscore:
+            bestsam = s
+            bestscore = score
+    if not fullseq:
+        print >>sys.stderr, ("ERROR, all sequences for {} appear to be hard clipped, cannot run analysis".format(s.qname))
+        sys.exit(1)
+    bestsam.seq = fullseq
+    return bestsam
+
 
 def ngcount(seq):
     """Returns N fraction and GC content of input sequence"""
@@ -87,6 +115,8 @@ def parseCigar(cigar):
 
     # First identify all CIGAR letters. We know these exist:
     charList = { 'M':0, 'I':0, 'D':0, 'S':0, 'N':0, 'H':0 } 
+    if cigar == '*':
+        return charList
     # This gets all letters in the current cigar
     chars = list(int_filter(set(list(cigar))))
     for c in chars:
@@ -108,8 +138,6 @@ def cigarFract(charList, char, size):
     else:
         return 0
             
-
-
 def int_filter(myList):
     """Return value if it's not an integer, can be used to remove numbers from CIGAR"""
     for v in myList:
@@ -158,6 +186,51 @@ def fractPlot(mylist, color, label, outfile):
         plt.legend(loc='upper center')
         plt.savefig(outfile)     
 
+def yieldBestHit(f):
+    """Checks header for correct sort, then yields best hit for every read"""
+    sortflag = False
+    headflag = False
+    for line in f:
+        if line.startswith('@HD'):
+            if line.strip().split(':')[-1] != 'queryname':
+                print >>sys.stderr, "ERROR, your file is not sorted by query, please run samtools -n"
+                sys.exit(1)
+            else:
+                sortflag = True
+            continue
+        elif line.startswith('@'):
+            headflag = True
+            continue
+        break
+    # we're now in the body; start yielding hits
+    if not headflag:
+        print >>sys.stderr, "ERROR, your file does not appear to contain a header"
+        sys.exit(1)
+
+    if not sortflag:
+         print >>sys.stderr, "ERROR, cannot determine if your file is sorted, please run samtools -n"
+         sys.exit(1)
+
+    # Gather all alignments for a read
+    # Note: bwa will not output the full sequence when another hit has it, so 
+    # if there's a hard clip, we must retrieve the sequence, possibly from a later hit
+    phit = SamHit(line.strip())
+    readHits = [phit]
+    for line in f:
+        hit = SamHit(line.strip())
+        if hit.qname == phit.qname:
+            readHits.append(hit)
+        else:
+            rhit = getBest(readHits)
+            rhit.stats()
+            yield rhit
+            phit = hit
+            readHits = [phit]
+    rhit = getBest(readHits)
+    rhit.stats()
+    yield rhit
+
+
 # Main
 # read in command line and options
 
@@ -177,16 +250,13 @@ rawalignList = []
 hitCount = 0
 unalignedCount = 0
 
+
 # read the sam input file
 with open(args.sam, 'r') as f:
     # skip header lines
-    for line in f:
-        if line.startswith('@'):
-            continue
-        # Object call to samHit gets all the important info for each read
-        hit = SamHit(line.strip())
+    for hit in yieldBestHit(f):
         hitCount += 1
-        if hit.unaligned == True:
+        if hit.rawAlign == 0:
             unalignedCount += 1
             continue
         # add stats for the current read to our counters. All fractions are in whole percentage points.
@@ -200,7 +270,7 @@ with open(args.sam, 'r') as f:
         rawalignList.append(hit.rawAlign)
 
 # Now we have read the whole file so output some stats
-print '{} of {} reads are unaligned: {}%'.format(unalignedCount, hitCount, unalignedCount/hitCount)
+print '{0} of {1} reads are unaligned: {2:.1f}%'.format(unalignedCount, hitCount, 100* float(unalignedCount)/float(hitCount))
 print >>sys.stderr, "Done counting, creating figures..."
 
 # And create the histograms
