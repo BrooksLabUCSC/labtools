@@ -193,8 +193,10 @@ def yieldBestHit(f):
     for line in f:
         if line.startswith('@HD'):
             if line.strip().split(':')[-1] != 'queryname':
-                print >>sys.stderr, "ERROR, your file is not sorted by query, please run samtools -n"
-                sys.exit(1)
+                # samtools sort adds a @HD but might not remove the original if it's lower in the header
+                if not sortflag:
+                    print >>sys.stderr, "ERROR, your file is not sorted by query, please run samtools sort -n"
+                    sys.exit(1)
             else:
                 sortflag = True
             continue
