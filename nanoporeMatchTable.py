@@ -143,7 +143,7 @@ class BlatHit(object):
         self.blockCount = int(fields[17])
         self.blockSizes, self.qStarts, self.tStarts = fields[18:]
         self.qCover = self.qEnd - self.qStart	# length of blat match
-        self.pslScore = self.match + self.rep - self.mismatch - self.qGapCount - self.tGapCount
+        self.pslScore = self.match + self.rep - self.mismatch - self.qGapCount - self.tGapCount - self.tGapBases
         self.inline = inline
 
 def txSizeDict(infile):
@@ -185,8 +185,6 @@ def sizeDict(infile):
 args = parser.parse_args()
 # Run program
 
-if (args.txalign and not args.txsizes) or (args.txsizes and not args.txalign):
-    print >>sys.stderr, 'ERROR, if you want to add transcript info you must give both the --txalign AND --txsizes input'
 
 # Create read objects
 readDict = sizeDict(args.readsizes)
@@ -253,10 +251,10 @@ if args.txalign:
 
 
 # Print results
-if args.txsizes:
+if args.txalign:
     print "ReadID\tLeftAdaptEnd\tTxMatchStart\tTxMatchEnd\tRightAdaptStart\tReadSize\tleftAdapt\trightAdapt\tTranscript\tTxSize\tstrand"
 else:
     print "ReadID\tLeftAdaptEnd\tRightAdaptStart\tReadSize\tleftAdapt\trightAdapt"
 for r in readDict.values():
-    r.printRead(args.txsizes)
+    r.printRead(args.txalign)
 
