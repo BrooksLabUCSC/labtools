@@ -284,6 +284,11 @@ def findChr(records, this_chr):
 # Main
 args = parser.parse_args()
 
+# Sanity check
+if args.mergesize <= args.wiggle:
+    print >>sys.stderr, "ERROR: mergesize (currently {}) must be larger than wiggle (currently: {}), please correct and rerun".format(args.mergesize, args.wiggle)
+    sys.exit(1)
+
 # Setup temporary output location
 tmpdir = '/tmp/spliceCorr_' + str(os.getpid())
 if os.path.exists(tmpdir):
