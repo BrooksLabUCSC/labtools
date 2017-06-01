@@ -2,6 +2,57 @@
 Small standalone scripts
 
 
+## correctSplice.py
+```
+usage: correctSplice.py [-h] -a ANNOTATIONS -j JUNCTIONS -g GENOFASTA -q QUERY
+                        -w WIGGLE [-o OUTDIR] [-m MERGESIZE]
+                        [-n NOVELTHRESHOLD]
+optional arguments:
+  -h, --help            show this help message and exit
+  -m MERGESIZE, --mergesize MERGESIZE
+                        merge genome alignment gaps of this size (30)
+  -n NOVELTHRESHOLD, --novelthreshold NOVELTHRESHOLD
+                        report any novel junctions that are confirmed by at
+                        least this many reads
+
+required arguments:
+  -a ANNOTATIONS, --annotations ANNOTATIONS
+                        genepred format genome annotation
+  -j JUNCTIONS, --junctions JUNCTIONS
+                        genepred format junctions from SAM file
+  -g GENOFASTA, --genofasta GENOFASTA
+                        genome fasta file
+  -q QUERY, --query QUERY
+                        psl format alignment to be corrected
+  -w WIGGLE, --wiggle WIGGLE
+                        wiggle room for annotated splice junction
+  -o OUTDIR, --outdir OUTDIR
+                        output directory
+```
+This program corrects splices in (nanopore read) alignments (psl format), using a whole genome annotation and a junctions file (genepred format).
+The junctions file should be derived from a short read alignment from the same sample, and can be created using
+junctionsFromSam.py, which is based on 
+https://raw.githubusercontent.com/anbrooks/juncBASE/master/preProcess_getASEventReadCounts.py
+
+NOTE TO USER: If you don't have a junctions file, just use the genome annotation file as input for both the -j and -a parameters.
+
+Before looking for splices, small gaps in the alignment are merged. The gap size can be changed; default is 30.
+Splices are corrected if they are within a 'wiggle' distance of the intron start or intron end in the genome annotation.
+
+For any novel splices, consensus sequences (GT/AG etc) are checked using the genome sequence. If no consensus is found, output junctions have '.' in the strand field.
+
+**The mRnaToGenes program must be in $PATH**
+
+```
+OUTPUTS:
+    novel.txt        contains a list of novel junctions with enough supporting reads
+    junctions.bed    contains all junctions found in the query file. The score field contains the number of alignments with this junction.
+    notfound.txt     is a list of query donor and acceptor sites that could not be found within the allowed wiggle distance
+    multihit.txt     is a list of query donor and acceptor sites that had multiple hits within the allowed wiggle distance
+    corrected.gp     contains all query annotations, splice corrected where possible
+```
+Notes: Novel junctions are only reported if they are identical in at least 3 annotations. This means that it is possible to miss junctions for which alignments are close but not identical. To see all novel junctions, set --novelthreshold to 1
+
 ## nanoporeQC
 This bash program runs blat to align adapters to nanopore reads and formats input for `nanoporeMatchTable.py`, then calls the program
 
@@ -46,3 +97,4 @@ required arguments:
   --readsizes READSIZES
                         faCount output for nanopore reads
 ```
+
