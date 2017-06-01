@@ -12,12 +12,12 @@ import numpy
 # It also results in a short usage statement when the program is called with '-h'
 # and a longer statement when called with '--help'
 
-parser = argparse.ArgumentParser(description="From input sam file, get alignment stats such as fraction of query aligned and indels/mismatches from the CIGAR string and output histograms.")
+parser = argparse.ArgumentParser(description="From input sam file, get alignment stats such as fraction of query aligned and indels/mismatches from the CIGAR string and output histograms. Note: Reads must not be hard clipped.")
 
 # Compulsory arguments start without a dash:
 parser.add_argument('sam', type=str,  help="sam format file")
-# optional boolean argument (not used here)
-# parser.add_argument('-d', '--debug', help="Optional debugging output", action='store_true')
+# optional boolean argument 
+parser.add_argument('-q', '--quiet', help="Do not print warnings about skipped reads", action='store_true')
 # optional regular argument
 parser.add_argument('-b', '--outputbase', help="Output basename")
 
@@ -63,16 +63,16 @@ class SamHit(object):
         # alignment percentage is rawAlign divided by self.size
         self.pAlign = int(100*(float(self.rawAlign)/float(self.size)))
 
-        # indels are counted a bit differently, we use the length of the read minus introns and overhang
-        alignSize = self.size - (self.charList['S'] + self.charList['N'] )
-        
-        self.ins = cigarFract(self.charList, 'I', alignSize)
-        self.delet = cigarFract(self.charList, 'D', alignSize)
+        # counting indels as fraction of the length of the alignment or read is a bit treacherous, because we're counting
+	# bases that were not part of the read (insertions) or not part of the genome (deletions)
+        # Decision: Let's use the same rawAlign (matches plus insertions) as the divider. This makes it somewhat consistent with 
+	# what we did before, even though the deletions are not part of this count
+        self.ins = cigarFract(self.charList, 'I', self.rawAlign)
+        self.delet = cigarFract(self.charList, 'D', self.rawAlign)
         self.indel = self.ins + self.delet 
 
-def getBest(sams):
+def getBest(sams, args):
     """Return single hit with best match, replace sequence with full length if necessary"""
-
     if len(sams) == 1:
         return sams[0]
     # we're assuming no empty cigar strings if there are multiple alignments
@@ -89,8 +89,11 @@ def getBest(sams):
             bestsam = s
             bestscore = score
     if not fullseq:
-        print >>sys.stderr, ("ERROR, all sequences for {} appear to be hard clipped, cannot run analysis".format(s.qname))
-        sys.exit(1)
+        if not args.quiet:
+            print >>sys.stderr, ("WARNING, all sequences for {} appear to be hard clipped, skipping".format(s.qname))
+        # modify the global variable
+        global ignoredCount
+        ignoredCount += 1
     bestsam.seq = fullseq
     return bestsam
 
@@ -186,51 +189,57 @@ def fractPlot(mylist, color, label, outfile):
         plt.legend(loc='upper center')
         plt.savefig(outfile)     
 
-def yieldBestHit(f):
+
+def yieldBestHit(f, sortsam, args):
     """Checks header for correct sort, then yields best hit for every read"""
     sortflag = False
-    headflag = False
     for line in f:
         if line.startswith('@HD'):
-            if line.strip().split(':')[-1] != 'queryname':
-                # samtools sort adds a @HD but might not remove the original if it's lower in the header
-                if not sortflag:
-                    print >>sys.stderr, "ERROR, your file is not sorted by query, please run samtools sort -n"
-                    sys.exit(1)
-            else:
+            if line.strip().split(':')[-1] == 'queryname':
                 sortflag = True
             continue
         elif line.startswith('@'):
-            headflag = True
             continue
         break
-    # we're now in the body; start yielding hits
-    if not headflag:
-        print >>sys.stderr, "ERROR, your file does not appear to contain a header"
-        sys.exit(1)
-
     if not sortflag:
-         print >>sys.stderr, "ERROR, cannot determine if your file is sorted, please run samtools -n"
-         sys.exit(1)
-
-    # Gather all alignments for a read
-    # Note: bwa will not output the full sequence when another hit has it, so 
-    # if there's a hard clip, we must retrieve the sequence, possibly from a later hit
-    phit = SamHit(line.strip())
-    readHits = [phit]
+        # Instead of whining about it, just sort the file and start over
+        # We're not using python's sort() function because the linux commandline sort is way more memory efficient
+	# and our current file may be large.
+        print >>sys.stderr, "No sort flag found in header, or not sorted by query. Sorting file to be sure." 
+        with open(sortsam, 'w') as outf:
+            for line in f:
+                outf.write(line)
+        f.close()
+        # sort in place using the option -o
+        sortcmd = 'sort {sfile} -o {sfile}'.format(sfile = sortsam)
+        os.system(sortcmd)
+        f = open(sortsam, 'r')
+        # we have to read the first line in order to match the original file
+        line = f.readline()
+        phit = SamHit(line.strip())     
+        readHits = [phit]
+    else:
+        # we're now in the body,  start yielding hits
+        phit = SamHit(line.strip())     
+        readHits = [phit]
+        # Gather all alignments for a read
+        # Note: bwa will not output the full sequence when another hit has it, so 
+        # if there's a hard clip, we must retrieve the sequence, possibly from a later hit
     for line in f:
         hit = SamHit(line.strip())
         if hit.qname == phit.qname:
             readHits.append(hit)
         else:
-            rhit = getBest(readHits)
-            rhit.stats()
-            yield rhit
+            rhit = getBest(readHits, args)
+            if rhit.seq:
+              rhit.stats()
+              yield rhit
             phit = hit
             readHits = [phit]
-    rhit = getBest(readHits)
-    rhit.stats()
-    yield rhit
+    rhit = getBest(readHits, args)
+    if rhit.seq:
+      rhit.stats()
+      yield rhit
 
 
 # Main
@@ -251,12 +260,15 @@ sizeList = []
 rawalignList = []
 hitCount = 0
 unalignedCount = 0
+ignoredCount = 0
 
+# We might need to sort the file: output it here
+sortsam = ('.').join([outbase, str(os.getpid()), 'sorted.sam'])
 
 # read the sam input file
 with open(args.sam, 'r') as f:
     # skip header lines
-    for hit in yieldBestHit(f):
+    for hit in yieldBestHit(f, sortsam, args):
         hitCount += 1
         if hit.rawAlign == 0:
             unalignedCount += 1
@@ -271,8 +283,18 @@ with open(args.sam, 'r') as f:
         sizeList.append(hit.size)
         rawalignList.append(hit.rawAlign)
 
+# Delete the sortfile if it's there
+try:
+    os.remove(sortsam)
+except OSError:
+    pass
+
+
 # Now we have read the whole file so output some stats
-print '{0} of {1} reads are unaligned: {2:.1f}%'.format(unalignedCount, hitCount, 100* float(unalignedCount)/float(hitCount))
+
+uniqueReadCount = hitCount + ignoredCount
+print '{0} of {1} reads are unaligned: {2:.1f}%'.format(unalignedCount, uniqueReadCount, 100* float(unalignedCount)/float(uniqueReadCount))
+print '{0} of {1} reads were skipped: {2:.1f}%'.format(ignoredCount, uniqueReadCount, 100* float(ignoredCount)/float(uniqueReadCount))
 print >>sys.stderr, "Done counting, creating figures..."
 
 # And create the histograms

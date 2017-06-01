@@ -97,4 +97,20 @@ required arguments:
   --readsizes READSIZES
                         faCount output for nanopore reads
 ```
+## samAlignStats.py
+This program creates a set of pretty histograms to show information on alignments, such as percentage indels and mismatches.
 
+usage: samAlignStats.py [-h] [-q] [-b OUTPUTBASE] sam
+
+From input sam file, get alignment stats such as fraction of query aligned and
+indels/mismatches from the CIGAR string and output histograms. Note: Reads
+must not be hard clipped.
+
+positional arguments:
+  sam                   sam format file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -q, --quiet           Do not print warnings about skipped reads
+  -b OUTPUTBASE, --outputbase OUTPUTBASE
+                        Output basename
