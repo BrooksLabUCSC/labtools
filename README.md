@@ -1,8 +1,31 @@
 # labtools
 Small standalone scripts
 
+**correctSplice.py**
+Corrects splices in (nanopore read) alignments (psl format), using a whole genome annotation and a junctions file (genepred format).
+
+**nanoporeQC**
+Bash program that runs blat to align adapters to nanopore reads and formats input for `nanoporeMatchTable.py`, then calls the program
+
+**nanoporeMatchTable.py**
+Creates a table with adapter positions in nanopore reads, based on a `psl` format input file.
+
+**samAlignStats.py**
+Creates a set of pretty histograms to show information on alignments, such as percentage indels and mismatches.
+
+**adapterMask.py**
+Creates a bed file for masking adapters, which can be used as input to [maskOutFa](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/maskOutFa)
+
+**genepredToJunctions.py**
+Read a genepred input file, output all junctions in bed format
+
+**junctionsFromSam.py**
+Takes a SAM format file as input and creates an output directory with a junction file in bed format.
+
+# Details on labtools
 
 ## correctSplice.py
+This program corrects splices in (nanopore read) alignments (psl format), using a whole genome annotation and a junctions file (genepred format).
 ```
 usage: correctSplice.py [-h] -a ANNOTATIONS -j JUNCTIONS -g GENOFASTA -q QUERY
                         -w WIGGLE [-o OUTDIR] [-m MERGESIZE]
@@ -29,7 +52,6 @@ required arguments:
   -o OUTDIR, --outdir OUTDIR
                         output directory
 ```
-This program corrects splices in (nanopore read) alignments (psl format), using a whole genome annotation and a junctions file (genepred format).
 The junctions file should be derived from a short read alignment from the same sample, and can be created using
 junctionsFromSam.py, which is based on 
 https://raw.githubusercontent.com/anbrooks/juncBASE/master/preProcess_getASEventReadCounts.py
@@ -118,7 +140,6 @@ optional arguments:
 ```
 
 ## adapterMask.py
-
 Creates a bed file for masking adapters, which can be used as input to [maskOutFa](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/maskOutFa)
 
 ```
