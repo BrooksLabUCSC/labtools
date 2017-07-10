@@ -164,3 +164,31 @@ required arguments:
   -o OUTDIR, --outdir OUTDIR
                         temporary output dir
 ```
+
+## junctionsFromSam.py
+Takes a SAM format file as input and creates an output directory with a junction file in bed format.
+This program is an adaptation of preProcess_getASEventReadCounts.py in [juncBase](https://github.com/anbrooks/juncBASE.git)
+```
+Usage: junctionsFromSam.py [options]
+
+Options:
+  -h, --help           show this help message and exit
+  -s SAM_FILE          SAM/BAM file of read alignments to junctions and
+                       the genome. More than one file can be listed,
+                       but comma-delimited, e.g file_1.bam,file_2.bam
+  --unique             Only keeps uniquely aligned reads. Looks at NH
+                       tag to be 1 for this information.
+  -n NAME              Name prefixed to output files and used for
+                       output BED file. Default=getASEventReadCounts_input
+  -l READ_LENGTH       Expected read length if all reads should be of
+                       the same length
+  -c CONFIDENCE_SCORE  The mininmum entropy score a junction
+                       has to have in order to be considered
+                       confident. The entropy score =
+                       -Shannon Entropy. Default=1.0
+  -j FORCED_JUNCTIONS  File containing intron coordinates
+                       that correspond to junctions that will be
+                       kept regardless of the confidence score.
+  -o OUTPUT_DIR        Directory to place all output files.
+
+```
