@@ -63,7 +63,7 @@ Splices are corrected if they are within a 'wiggle' distance of the intron start
 
 For any novel splices, consensus sequences (GT/AG etc) are checked using the genome sequence. If no consensus is found, output junctions have '.' in the strand field.
 
-**The mRnaToGenes program must be in $PATH**
+**The mRnaToGene program must be in $PATH**
 
 ```
 OUTPUTS:
