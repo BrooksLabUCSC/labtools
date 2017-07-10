@@ -100,6 +100,7 @@ required arguments:
 ## samAlignStats.py
 This program creates a set of pretty histograms to show information on alignments, such as percentage indels and mismatches.
 
+```
 usage: samAlignStats.py [-h] [-q] [-b OUTPUTBASE] sam
 
 From input sam file, get alignment stats such as fraction of query aligned and
@@ -114,3 +115,52 @@ optional arguments:
   -q, --quiet           Do not print warnings about skipped reads
   -b OUTPUTBASE, --outputbase OUTPUTBASE
                         Output basename
+```
+
+## adapterMask.py
+
+Creates a bed file for masking adapters, which can be used as input to [maskOutFa](http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/maskOutFa)
+
+```
+usage: adapterMask.py [-h] --adaptalign ADAPTALIGN [--minEndMatch MINENDMATCH]
+                      [--minCover MINCOVER]
+
+This program is based on nanoporeMatchTable py.
+It takes in a psl file of adapter queries to a nanopore read database and outputs a bed file with coordinates
+that can be used to mask the sequences.
+Suggested blat settings:
+	blat -minIdentity=0 -minMatch=0 -minScore=0
+
+Matches within a settable limit from each end of the read (default 100) result in masking out the full end.
+Matches outside this region with a set coverage (default 50nt of the read) are also masked out
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --minEndMatch MINENDMATCH
+                        If the adapter matches within this range of the 5' or
+                        3' end, the whole end is masked (default 100)
+  --minCover MINCOVER   If the adapter matches away from the end, it must
+                        cover at least this much of the read to be output
+                        (default 50)
+
+required arguments:
+  --adaptalign ADAPTALIGN
+                        psl format alignment of ADAPTERS vs READS
+```
+
+## genepredToJunctions.py
+Read a genepred input file, output all junctions in bed format
+
+```
+usage: genePredToJunctions.py [-h] [-o OUTDIR] annotations
+
+Create bed output format junctions file
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+required arguments:
+  annotations           genepred format genome annotation
+  -o OUTDIR, --outdir OUTDIR
+                        temporary output dir
+```
