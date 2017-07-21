@@ -27,12 +27,13 @@ The mRnaToGenes program must be in $PATH
 
 OUTPUTS:
     novel.txt        contains a list of novel junctions with enough supporting reads
+    novelsplices.bed contains the novel junctions in bed format
     junctions.bed    contains all junctions found in the query file. The score field contains the number of alignments with this junction.
     notfound.txt     is a list of query donor and acceptor sites that could not be found within the allowed wiggle distance
     multihit.txt     is a list of query donor and acceptor sites that had multiple hits within the allowed wiggle distance
     corrected.gp     contains all query annotations, splice corrected where possible
 
-Notes: Novel junctions are only reported if they are identical in at least 3 annotations. This means that it is possible to miss junctions for which alignments are close but not identical. To see all novel junctions, set --novelthreshold to 1
+Notes: Novel junctions are only reported if they are identical in at least 3 annotations (by default). This means that it is possible to miss junctions for which alignments are close but not identical. To see all novel junctions, set --novelthreshold to 1
 
 
         '''))
@@ -209,6 +210,7 @@ def makeBed(chr, chr_seq, intron, score, outfile, strandlist):
     Create bed format intron output with a blocksize of 20
     If the intron is not found in existing annotation, or if strand info conflicts, 
     infers strand from intron start and end sequence 
+    If the strand cannot be determined, the strand field is output as a period
     """
     start, end = map(int, intron.split('-'))
     strand = '.'
@@ -222,6 +224,7 @@ def makeBed(chr, chr_seq, intron, score, outfile, strandlist):
     bedline = '{chr}\t{cstart}\t{cend}\t{chr}:{intron}\t{score}\t{strand}\t{cstart}\t{cend}\t0,0,255\t2\t20,20\t0,{bstart},\n'.format(chr=chr, 
          strand=strand, cstart=cstart, cend=cend, intron=intron, score=score, bstart=end-cstart)
     outfile.write(bedline)
+    return bedline
 
 
 def disambiguateJcnStr(chr_seq, start, end):
@@ -326,6 +329,7 @@ except:
 
 # Per-chromosome analysis
 with open(os.path.join(workdir, 'corrected.gp'), 'w') as outgp, \
+  open(os.path.join(workdir, 'novelsplices.bed'), 'w') as splicebed, \
   open(os.path.join(workdir, 'junctions.bed'), 'w') as outbed, \
   open(os.path.join(workdir, 'novel.txt'), 'w') as outnv, \
   open(os.path.join(workdir, 'notfound.txt'), 'w') as outnf, \
@@ -372,9 +376,10 @@ with open(os.path.join(workdir, 'corrected.gp'), 'w') as outgp, \
             alcount = alignIntrons.count(i) 
             jucount = junctionIntrons.count(i)
             ancount = annotIntrons.count(i)
-            makeBed(c, chr_seq, i, alcount, outbed, cors.istrands)
+            bedline = makeBed(c, chr_seq, i, alcount, outbed, cors.istrands)
             if not ancount and alcount >= args.novelthreshold:
                outnv.write("{}:{}\t{}\t{}\t{}\n".format(c, i, alignIntrons.count(i), junctionIntrons.count(i), annotIntrons.count(i)))
+               splicebed.write(bedline)
 
 shutil.rmtree(tmpdir)
 
@@ -384,12 +389,14 @@ SUCCESS
 
 These output files were created:
     novel.txt        contains a list of novel junctions with enough supporting reads
+    novelsplices.bed contains novel junctions
     junctions.bed    contains all junctions found in the query file. The score field contains the number of alignments with this junction.
     notfound.txt     is a list of query donor and acceptor sites that could not be found within the allowed wiggle distance
     multihit.txt     is a list of query donor and acceptor sites that had multiple hits within the allowed wiggle distance
     corrected.gp     contains all query annotations, splice corrected where possible
 
 Notes: 
+   The junctions in junctions.bed are NOT NECESSARILY correct splices. They just represent all remaining alignment gaps after splice correction.
    Novel junctions are only reported if they are identical in at least 3 annotations. This means that it is possible to miss junctions for which alignments are close but not identical. To see all novel junctions, set --novelthreshold to 1
    If the bed file contains a period in the strand field, the junction is likely an artifact (for example a misalignment of exon ends or an unfilled gap in an exon)
 
