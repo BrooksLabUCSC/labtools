@@ -301,7 +301,7 @@ os.makedirs(tmpdir)
 # Convert the genome alignment psl to genepred - doing this first because it is most likely to fail
 mrnaToGene = which('mrnaToGene')
 msize = '-insertMergeSize={}'.format(args.mergesize)
-gpgeno = '{}/{}.gp'.format(tmpdir, args.query)
+gpgeno = '{}/{}.gp'.format(tmpdir, os.path.basename(args.query))
 cmd = [mrnaToGene, '-noCds', msize, args.query, gpgeno]
 try:
     subprocess.check_call(cmd)
