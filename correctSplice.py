@@ -279,7 +279,7 @@ def findChr(records, this_chr):
     elif this_chr.lstrip("chr") in records:
         chr_seq = records[unFormatChr(this_chr)].seq
     else:
-        print "Cannot find %s in genome sequence." % this_chr
+        print "ERROR: Cannot find %s in genome sequence, exiting" % this_chr
         sys.exit(1)
     return chr_seq
 
