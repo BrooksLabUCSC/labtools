@@ -12,8 +12,8 @@ parser = argparse.ArgumentParser(formatter_class= argparse.RawDescriptionHelpFor
 group = parser.add_argument_group('required arguments')
 group.add_argument('-c', '--count', type=str, required=True, help="Tab delimited file that contains desired transcript headers along with the number of desired reads")
 group.add_argument('-f', '--fasta_file', type=str, required=True, help="fasta file that contains all the potential transcripts that could be simulated (gencode)")
-group.add_argument('-p', '--percentage', type=float, default=0.9, help="Decimal percetage of the read to be considered full length")
-group.add_argument('-n', '--not_full_length', type=float, default=0.2, help="Decimal percentage of the reads to be not full length")
+group.add_argument('-p', '--mincov', type=float, default=0.9, help="Minimum transcript coverage to be considered full length (default 0.9)")
+group.add_argument('-n', '--not_full_length', type=float, default=0.2, help="What fraction of the output reads should be not full length (default 0.2)")
 group.add_argument('-M', '--model_prefix', type=str, required=True, help="Model prefix used to simulate reads e.g. Hg38_Model2/Hg38_training")
 group.add_argument('-d', '--outdir', type=str, default="ns_output", help="Output directory")
 group.add_argument('-O', '--combined', type=str, default="combined.fasta", help="final combined simulated reads fasta file")
@@ -73,7 +73,7 @@ def runNanosimPerTx(args, countDict):
                 if seq_len > args.max_len:
                     continue
             count = countDict[id] * args.multiply
-            minimum = int(float(seq_len) * args.percentage)
+            minimum = int(float(seq_len) * args.mincov)
             num_full_length = int(float(count) * (1- args.not_full_length))
             num_non_full_length = int(float(count) * args.not_full_length)
             # create inputfile for Nanosim
